@@ -20,7 +20,10 @@ const app = express();
 // --- Sécurité de base ---
 app.use(helmet());                     // en-têtes HTTP sécurisés
 app.use(cors({
-  origin: ['https://garage-elite-ne.ch'], // à restreindre au(x) domaine(s) réel(s)
+  origin: [
+    'https://garage-elite-ne.ch',                        // domaine final
+    'https://601yxcgdwu.preview.infomaniak.website'       // adresse de prévisualisation, à retirer une fois le domaine final actif
+  ],
   credentials: true
 }));
 app.use(express.json({ limit: '2mb' }));
