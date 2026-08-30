@@ -196,18 +196,33 @@ router.post('/invoices',
 );
 
 // PUT /backoffice/billing/invoices/:id/status — marquer payée/annulée/remboursée
+// Moyens de paiement acceptés (pas de paiement en ligne) : terminal sur place
+// (carte ou TWINT via le terminal myPOS du garage), qr_bill (virement bancaire
+// via facture QR), ou cash (espèces sur place).
 // Le passage à "paid" crédite automatiquement les points de fidélité du client.
+const PAYMENT_METHODS = ['terminal', 'qr_bill', 'cash'];
+
 router.put('/invoices/:id/status', requireAuth, requirePermission('invoices.create'), async (req, res) => {
-  const { status } = req.body;
+  const { status, method } = req.body;
   if (!['unpaid', 'paid', 'cancelled', 'refunded'].includes(status)) {
     return res.status(400).json({ error: 'Statut invalide.' });
   }
+  if (status === 'paid' && method && !PAYMENT_METHODS.includes(method)) {
+    return res.status(400).json({ error: `Mode de paiement invalide. Valeurs acceptées : ${PAYMENT_METHODS.join(', ')}.` });
+  }
+
   const inv = await db.query('SELECT * FROM invoices WHERE id = ?', [req.params.id]);
   if (!inv.rows.length) return res.status(404).json({ error: 'Facture introuvable.' });
 
   await db.query('UPDATE invoices SET status = ?, paid_at = IF(? = "paid", NOW(), paid_at) WHERE id = ?', [status, status, req.params.id]);
 
   if (status === 'paid' && inv.rows[0].status !== 'paid') {
+    if (method) {
+      await db.query(
+        'INSERT INTO payments (id, invoice_id, method, amount_chf, status) VALUES (?,?,?,?,\'completed\')',
+        [crypto.randomUUID(), req.params.id, method, inv.rows[0].total_chf]
+      );
+    }
     const { creditLoyaltyPoints } = require('./loyalty_helpers');
     await creditLoyaltyPoints(inv.rows[0].client_id, Math.floor(Number(inv.rows[0].total_chf)), 'invoice_paid', 'invoice', inv.rows[0].id, req.user.id);
   }
